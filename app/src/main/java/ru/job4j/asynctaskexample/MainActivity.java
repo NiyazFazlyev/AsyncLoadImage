@@ -1,89 +1,70 @@
 package ru.job4j.asynctaskexample;
 
-import android.os.AsyncTask;
+
 import android.os.Bundle;
-import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
-import android.widget.Toast;
+import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import java.lang.ref.WeakReference;
+import java.util.concurrent.TimeUnit;
+
+import io.reactivex.Observable;
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.disposables.Disposable;
 
 public class MainActivity extends AppCompatActivity {
-
+    private Disposable sbr;
     private ProgressBar bar;
+    private TextView info;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    protected void onCreate(Bundle bundle) {
+        super.onCreate(bundle);
         setContentView(R.layout.activity_main);
-        Button start = findViewById(R.id.button_start);
-        bar = findViewById(R.id.progressBar);
+        bar = findViewById(R.id.load);
+        info = findViewById(R.id.info);
+        boolean recreated = bundle != null;
+        final int startAt = recreated ? bundle.getInt("progress", 0) : 0;
+        info.setText(startAt + "%");
+        Button start = findViewById(R.id.start);
+        start.setOnClickListener(v -> start(startAt));
+        Button stop = findViewById(R.id.stop);
+        stop.setOnClickListener(v -> {
+            if (this.sbr != null) {
+                this.sbr.dispose();
+                this.bar.setProgress(0);
+                this.info.setText("0%");
+            }
+        });
+        if (recreated) {
+            start(startAt);
+        }
     }
 
-    public void startAsyncTask(View view) {
-        SampleAsyncTask task = new SampleAsyncTask(MainActivity.this);
-        task.execute(10);
+    public void start(int startAt) {
+        if (sbr == null) {
+            this.sbr = Observable.interval(1, TimeUnit.SECONDS)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(v -> {
+                        info.setText(startAt + v.intValue() + "%");
+                        bar.setProgress(startAt + v.intValue());
+                    });
+        }
     }
 
-    private static class SampleAsyncTask extends AsyncTask<Integer, Integer, String> {
-        private WeakReference<MainActivity> activityWeakReference;
+    @Override
+    protected void onSaveInstanceState(Bundle bundle) {
+        super.onSaveInstanceState(bundle);
+        bundle.putInt("progress", bar.getProgress());
+    }
 
-        SampleAsyncTask(MainActivity activity) {
-            activityWeakReference = new WeakReference<>(activity);
-        }
-
-        @Override
-        protected String doInBackground(Integer... integers) {
-            int count = 0;
-
-            while (count < integers[0]) {
-                publishProgress((count * 100) / integers[0]);
-                try {
-                    Thread.sleep(1000);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                count++;
-            }
-            return "Finish";
-        }
-
-        @Override
-        protected void onProgressUpdate(Integer... values) {
-            super.onProgressUpdate(values);
-            MainActivity activity = activityWeakReference.get();
-            if (activity == null || activity.isFinishing()) {
-                return;
-            }
-            System.out.println(values[0]);
-            activity.bar.setProgress(values[0]);
-        }
-
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-            MainActivity activity = activityWeakReference.get();
-            if (activity == null || activity.isFinishing()) {
-                System.out.println("no activity");
-                return;
-            }
-            Toast.makeText(activity, "start", Toast.LENGTH_SHORT).show();
-            activity.bar.setVisibility(View.VISIBLE);
-        }
-
-        @Override
-        protected void onPostExecute(String s) {
-            super.onPostExecute(s);
-            MainActivity activity = activityWeakReference.get();
-            if (activity == null || activity.isFinishing()) {
-                return;
-            }
-            Toast.makeText(activity, s, Toast.LENGTH_SHORT).show();
-            activity.bar.setProgress(0);
-            activity.bar.setVisibility(View.INVISIBLE);
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (this.sbr != null) {
+            this.sbr.dispose();
         }
     }
 }
